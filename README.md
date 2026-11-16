@@ -10,18 +10,21 @@ Install `das-e2e` beside `e2e` ^0.23.1. Use the npm package:
 npm install --save-dev das-e2e e2e@^0.23.1
 ```
 
-Or use the git dependency at its pin tag:
+Or use the git dependency at its pin tag. npm 11 runs the install script of the pseudo terminal package only when `allowScripts` approves it:
 
 ```json
 {
   "devDependencies": {
     "das-e2e": "github:appboypov/das-e2e#v0.1.0",
     "e2e": "0.23.1"
+  },
+  "allowScripts": {
+    "@homebridge/node-pty-prebuilt-multiarch": true
   }
 }
 ```
 
-The package needs Node 24.21.0.
+The npm install needs the same `allowScripts` entry. The package needs Node 24.21.0.
 
 ## Target
 
