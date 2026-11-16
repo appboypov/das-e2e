@@ -79,8 +79,10 @@ async function endChild(child: ChildProcess, closed: Promise<unknown>, platform:
   );
   child.kill();
   const grace = Promise.withResolvers<false>();
+  // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Performance] The grace timer stays scheduled after a prompt child exit. Each stopped run retains its timer and closure for the unused part of 2000 ms because unref does not cancel it.
   setTimeout(() => grace.resolve(false), STOP_GRACE_MS).unref();
   if (await Promise.race([settled, grace.promise])) return;
+  // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Conventions] SIGKILL escalation has no business test with a child that ignores SIGTERM. Existing timeout cases cover only cooperative children rather than this branch as required by our-development-conventions/references/unit-tests.md.
   if (platform !== 'win32') child.kill('SIGKILL');
   await settled;
 }
