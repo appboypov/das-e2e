@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
-import { EngineError } from 'e2e/engine';
+import { EngineError, withinCleanupBudget } from 'e2e/engine';
 import { definedEnv } from '../../../core/utils/process-env.ts';
 import type { CliRunOptions } from '../models/cli-run-options.ts';
 import type { CliRunResult } from '../models/cli-run-result.ts';
@@ -26,6 +26,7 @@ export async function runCli(
     env: definedEnv(spec.env, runOptions?.env ?? {}),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+    detached: platform !== 'win32',
   });
   const stdout: Buffer[] = [];
   const stderr: Buffer[] = [];
@@ -71,18 +72,43 @@ export async function runCli(
   }
 }
 
-/** Ends the child: a stop signal first, then a kill on macOS and Linux when it does not close in time. */
+/** Stops the owned process tree within a bounded cleanup budget. */
 async function endChild(child: ChildProcess, closed: Promise<unknown>, platform: NodeJS.Platform): Promise<void> {
-  const settled = closed.then(
-    () => true,
-    () => true,
-  );
-  child.kill();
-  const grace = Promise.withResolvers<false>();
-  // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Performance] The grace timer stays scheduled after a prompt child exit. Each stopped run retains its timer and closure for the unused part of 2000 ms because unref does not cancel it.
-  setTimeout(() => grace.resolve(false), STOP_GRACE_MS).unref();
-  if (await Promise.race([settled, grace.promise])) return;
-  // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Conventions] SIGKILL escalation has no business test with a child that ignores SIGTERM. Existing timeout cases cover only cooperative children rather than this branch as required by our-development-conventions/references/unit-tests.md.
-  if (platform !== 'win32') child.kill('SIGKILL');
-  await settled;
+  let helper: ChildProcess | undefined;
+  const budget = { signal: new AbortController().signal, timeoutMs: STOP_GRACE_MS };
+  const signalGroup = (signal: NodeJS.Signals): void => {
+    if (child.pid === undefined) return;
+    try {
+      process.kill(-child.pid, signal);
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+    }
+  };
+  try {
+    if (platform === 'win32') {
+      if (child.pid === undefined) return;
+      helper = spawn('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+        stdio: 'ignore',
+        windowsHide: true,
+        env: process.env,
+      });
+      const helperClosed = Promise.withResolvers<void>();
+      helper.once('close', () => helperClosed.resolve());
+      helper.once('error', () => helperClosed.resolve());
+      await withinCleanupBudget(Promise.allSettled([closed, helperClosed.promise]), budget);
+    } else {
+      signalGroup('SIGTERM');
+      await withinCleanupBudget(closed, budget);
+      signalGroup('SIGKILL');
+    }
+  } finally {
+    if (platform === 'win32') {
+      helper?.kill('SIGKILL');
+      helper?.unref();
+      if (child.pid !== undefined) child.kill('SIGKILL');
+    }
+    child.stdout?.destroy();
+    child.stderr?.destroy();
+    child.unref();
+  }
 }
