@@ -62,8 +62,9 @@ export function terminal(options: TerminalOptions): EngineHandle {
     const current = requireAttempt();
     if (isRunning(current)) return current;
     const target = spec ?? fail('INVALID_STATE', 'the engine has no init yet');
-    if (findExecutable(target.command, target.env, target.cwd, process.platform) === undefined) {
-      fail('INVALID_STATE', `${target.command} did not start: no such program on PATH`);
+    const executable = findExecutable(target.command, target.env, target.cwd, process.platform);
+    if (executable === undefined) {
+      return fail('INVALID_STATE', `${target.command} did not start: no such program on PATH`);
     }
 
     const screen = new xterm.Terminal({ cols: current.cols, rows: current.rows, allowProposedApi: true });
@@ -71,7 +72,7 @@ export function terminal(options: TerminalOptions): EngineHandle {
     screen.unicode.activeVersion = '11';
     let pty;
     try {
-      pty = spawn(target.command, [...target.args], {
+      pty = spawn(executable, [...target.args], {
         name: 'xterm-256color',
         cols: current.cols,
         rows: current.rows,
