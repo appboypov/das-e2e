@@ -9,12 +9,11 @@ const output = '.e2e/terminal';
 const pidsFolder = '.e2e/fixture-home/pids';
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-// #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Scope] A final PID scan does not prove cleanup after each test. The approved PRD Own Tests requires no fixture process after every attempt but this scan runs only after both suites finish.
-const failures = [...pictureFailures(), ...leftoverFailures()];
+const failures = [...pictureFailures(), ...attemptCleanupFailures(), ...leftoverFailures()];
 rmSync(pidsFolder, { recursive: true, force: true });
 for (const failure of failures) console.error(`check-e2e-run: ${failure}`);
 if (failures.length > 0) process.exit(1);
-console.log(`check-e2e-run: ${repeats} failure pictures found and no fixture program left running`);
+console.log(`check-e2e-run: ${repeats} failure pictures found and no fixture program left after any test`);
 
 function pictureFailures() {
   const report = JSON.parse(readFileSync(path.join(output, 'report.json'), 'utf8'));
@@ -32,6 +31,22 @@ function pictureFailures() {
       const file = path.join(output, 'results', screenshot.path);
       if (!existsSync(file)) failures.push(`${name} has no file ${file}`);
       else if (!readFileSync(file).subarray(0, pngSignature.length).equals(pngSignature)) failures.push(`${file} is no PNG`);
+    }
+  }
+  return failures;
+}
+
+function attemptCleanupFailures() {
+  const failures = [];
+  for (const target of ['terminal', 'missing']) {
+    const reportPath = `.e2e/${target}/report.json`;
+    const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    const checks = JSON.parse(readFileSync(`${reportPath}.cleanup.json`, 'utf8'));
+    if (checks.length !== report.run.results.length) {
+      failures.push(`${target}: cleanup checked ${checks.length} tests instead of ${report.run.results.length}`);
+    }
+    for (const check of checks) {
+      if (check.pids.length > 0) failures.push(`${check.title}: fixture processes still run: ${check.pids.join(', ')}`);
     }
   }
   return failures;
