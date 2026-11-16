@@ -25,6 +25,7 @@ test('run env reaches the program', { requires: ['cli'] }, async ({ cli }) => {
 
 test('a cli test starts no pseudo terminal', { requires: ['cli'] }, async ({ cli }) => {
   await cli.run(['--json']);
+  // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Scope] This checks for a live PTY rather than any PTY start. The approved PRD Own Tests requires absence of a recorded start but alivePids discards processes that already exited.
   assert.deepEqual(alivePids('tty'), []);
 });
 

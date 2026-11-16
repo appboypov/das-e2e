@@ -9,6 +9,7 @@ const output = '.e2e/terminal';
 const pidsFolder = '.e2e/fixture-home/pids';
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+// #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Scope] A final PID scan does not prove cleanup after each test. The approved PRD Own Tests requires no fixture process after every attempt but this scan runs only after both suites finish.
 const failures = [...pictureFailures(), ...leftoverFailures()];
 rmSync(pidsFolder, { recursive: true, force: true });
 for (const failure of failures) console.error(`check-e2e-run: ${failure}`);

@@ -193,6 +193,7 @@ export function terminal(options: TerminalOptions): EngineHandle {
     await mkdir(current.artifactsDir, { recursive: true });
     const stem = (label ?? 'screen').replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 100);
     let file = path.join(current.artifactsDir, `${stem}.png`);
+    // #FEEDBACK 2026-11-16T18:24:55.000+01:00 | [Performance] Filename selection repeats blocking probes of every previous same-label picture. N pictures incur N(N+1)/2 existsSync calls although bounded bookkeeping can retain the next suffix.
     for (let n = 2; existsSync(file); n += 1) file = path.join(current.artifactsDir, `${stem}-${n}.png`);
     await writeFile(file, png);
     return path.relative(current.artifactsDir, file);
