@@ -1,0 +1,33 @@
+profile: das-e2e
+sync:
+  delete: true
+  gitSeed: true
+  exclude:
+    - node_modules
+    - dist
+    - .e2e
+    - .crabbox
+run:
+  preflightTools:
+    - node
+    - npm
+jobs:
+  # The VPS ships Node 22; the package pins 24.21.0. Each job installs that
+  # exact Node once into the shared data directory (no sudo) and puts it first
+  # on PATH.
+  build:
+    shell: true
+    command: /work/crabbox/bin/slot bash -c 'export N_PREFIX=/work/crabbox/data/das-e2e/n; [ -x "$N_PREFIX/bin/node" ] || npx --yes n 24.21.0; export PATH="$N_PREFIX/bin:$PATH"; npm ci --include=dev --no-audit --no-fund && npm run build'
+    stop: auto
+  typecheck:
+    shell: true
+    command: /work/crabbox/bin/slot bash -c 'export N_PREFIX=/work/crabbox/data/das-e2e/n; [ -x "$N_PREFIX/bin/node" ] || npx --yes n 24.21.0; export PATH="$N_PREFIX/bin:$PATH"; npm ci --include=dev --no-audit --no-fund && npm run typecheck'
+    stop: auto
+  test:
+    shell: true
+    command: /work/crabbox/bin/slot bash -c 'export N_PREFIX=/work/crabbox/data/das-e2e/n; [ -x "$N_PREFIX/bin/node" ] || npx --yes n 24.21.0; export PATH="$N_PREFIX/bin:$PATH"; npm ci --include=dev --no-audit --no-fund && npm test'
+    stop: auto
+  e2e:
+    shell: true
+    command: /work/crabbox/bin/slot bash -c 'export N_PREFIX=/work/crabbox/data/das-e2e/n; [ -x "$N_PREFIX/bin/node" ] || npx --yes n 24.21.0; export PATH="$N_PREFIX/bin:$PATH"; npm ci --include=dev --no-audit --no-fund && npm run test:e2e'
+    stop: auto
