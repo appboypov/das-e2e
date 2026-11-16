@@ -1,0 +1,47 @@
+{
+  "name": "das-e2e",
+  "version": "0.1.0",
+  "description": "Terminal engine for e2e: drive a CLI or TUI in a pseudo terminal and run a CLI with pipes.",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/appboypov/das-e2e.git"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "fonts"
+  ],
+  "engines": {
+    "node": "24.21.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test",
+    "test:e2e": "e2e run --target terminal --exclude-tag missing --repeat-each 3 --output .e2e/terminal && e2e run --target missing --tag missing --repeat-each 3 --output .e2e/missing && node scripts/check-e2e-run.mjs"
+  },
+  "dependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "0.15.0",
+    "@resvg/resvg-js": "2.6.2",
+    "@xterm/addon-unicode11": "0.9.0",
+    "@xterm/headless": "6.0.0"
+  },
+  "peerDependencies": {
+    "e2e": "^0.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "e2e": "0.23.1",
+    "typescript": "7.0.2"
+  },
+  "allowScripts": {
+    "@homebridge/node-pty-prebuilt-multiarch@0.15.0": true
+  }
+}
