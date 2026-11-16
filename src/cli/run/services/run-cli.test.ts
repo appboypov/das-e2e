@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import type { CliSpec } from '../models/cli-spec.ts';
 import { runCli } from './run-cli.ts';
 
@@ -23,7 +27,94 @@ async function failure(run: Promise<unknown>): Promise<{ code: unknown; message:
   return assert.fail('expected the run to fail');
 }
 
+async function processRegression(abort: boolean, ignoreTerm = false): Promise<void> {
+  const folder = await mkdtemp(join(tmpdir(), 'cli-cleanup-'));
+  const controller = new AbortController();
+  const pids: number[] = [];
+  const alive = (pid: number): boolean => {
+    try { process.kill(pid, 0); return true; }
+    catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false;
+      throw error;
+    }
+  };
+  const waitUntil = async (predicate: () => Promise<boolean>): Promise<void> => {
+    const deadline = performance.now() + 3000;
+    while (!(await predicate())) {
+      assert.ok(performance.now() < deadline, 'fixture condition reached its deadline');
+      await delay(20);
+    }
+  };
+  const record = (name: string): string =>
+    `require('node:fs').writeFileSync(${JSON.stringify(join(folder, name))},String(process.pid));`;
+  const descendant = record('descendant') + 'setTimeout(()=>{},10000);';
+  const source = ignoreTerm
+    ? "process.on('SIGTERM',()=>{});" + record('parent') + 'setInterval(()=>{},10000);'
+    : `require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:['ignore',1,2]});`
+      + record('parent') + 'setInterval(()=>{},10000);';
+  const started = performance.now();
+  const operation = failure(runCli(script(source), [], undefined, {
+    timeoutMs: abort ? 0 : 1000,
+    signal: controller.signal,
+  }));
+  // Attach failure handling before waiting for fixture readiness.
+  const settled = operation.then(value => ({ value }), error => ({ error }));
+  try {
+    for (const name of ignoreTerm ? ['parent'] : ['parent', 'descendant']) {
+      await waitUntil(async () => {
+        try {
+          const pid = Number(await readFile(join(folder, name), 'utf8'));
+          if (!pids.includes(pid)) pids.push(pid);
+          return true;
+        } catch (error) {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
+          throw error;
+        }
+      });
+    }
+    const stoppedAt = abort ? performance.now() : started;
+    if (abort) controller.abort();
+    const watchdog = new AbortController();
+    try {
+      const result = await Promise.race([
+        operation,
+        delay(5000, undefined, { signal: watchdog.signal }).then(() => assert.fail('operation cleanup hung')),
+      ]);
+      assert.equal(result.code, 'OPERATION_TIMEOUT');
+      assert.ok(performance.now() - stoppedAt < (abort ? 3500 : 4500));
+      await waitUntil(async () => pids.every(pid => !alive(pid)));
+    } finally {
+      watchdog.abort();
+    }
+  } finally {
+    controller.abort();
+    for (const name of ['parent', 'descendant']) {
+      try {
+        const pid = Number(await readFile(join(folder, name), 'utf8'));
+        if (!pids.includes(pid)) pids.push(pid);
+      } catch {}
+    }
+    for (const pid of pids) {
+      try { process.kill(pid, 'SIGKILL'); }
+      catch (error) {
+        if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+      }
+    }
+    await settled;
+    await rm(folder, { recursive: true, force: true });
+  }
+}
+
 describe('runCli', () => {
+  it('stops inherited pipe descendants on timeout', async () => {
+    await processRegression(false);
+  });
+  it('stops inherited pipe descendants on abort', async () => {
+    await processRegression(true);
+  });
+  it('stops a SIGTERM-ignoring child', { skip: process.platform === 'win32' }, async () => {
+    await processRegression(true, true);
+  });
   it('given a program that prints JSON, when run, then it answers exit code 0, the output and the parsed JSON', async () => {
     const result = await runCli(script('console.log(JSON.stringify({ ok: true }))'), [], undefined, open);
     assert.deepEqual(result, { exitCode: 0, stdout: '{"ok":true}\n', stderr: '', json: { ok: true } });
